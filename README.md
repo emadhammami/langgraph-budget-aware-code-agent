@@ -1,15 +1,18 @@
-# langgraph-budget-aware-code-agent
+# LangGraph Budget-Aware Code Agent
 
+[![CI](https://github.com/emadhammami/langgraph-budget-aware-code-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/emadhammami/langgraph-budget-aware-code-agent/actions/workflows/ci.yml)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1vje68dj4UjgrkMaFiWfvKV6NhzLAULX2?usp=sharing)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A small research prototype demonstrating how to build a **budget-aware, observable agentic
+A research prototype demonstrating how to build a **budget-aware, observable agentic
 workflow** using [LangGraph](https://github.com/langchain-ai/langgraph) and a
 Planner–Executor–Critic architecture.
 
-> **Scope note:** This is an academic demo, not a production system.  It is
-> designed to illustrate software-engineering principles for LLM-enabled agentic
-> systems — guardrails, shared state, routing logic, and telemetry — rather than
-> to achieve state-of-the-art code-repair performance.
+> **Scope note:** This is an academic prototype, not a production system.  The primary
+> contribution is the software-engineering design — explicit guardrails, typed shared state,
+> deterministic routing, and structured telemetry — rather than state-of-the-art code-repair
+> performance.
 
 ---
 
@@ -101,17 +104,27 @@ Each call to `finalize_update` appends a snapshot to `metrics_history`:
 
 ```
 langgraph-budget-aware-code-agent/
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # GitHub Actions: pytest + ruff on py3.11/3.12
 ├── agent/
-│   ├── __init__.py      # Public API: exposes run_agent
-│   ├── state.py         # Pydantic state models (AgentState and sub-models)
-│   ├── helpers.py       # Shared utilities: token estimation, metrics, LLM client
-│   ├── nodes.py         # LangGraph node functions
-│   ├── router.py        # Guardrail router
-│   └── graph.py         # Graph assembly and run_agent entry point
+│   ├── __init__.py              # Public API: exposes run_agent
+│   ├── state.py                 # Pydantic state models (AgentState and sub-models)
+│   ├── helpers.py               # Shared utilities: token estimation, metrics, LLM client
+│   ├── nodes.py                 # LangGraph node functions
+│   ├── router.py                # Guardrail router
+│   └── graph.py                 # Graph assembly and run_agent entry point
 ├── samples/
-│   └── sample_buggy_file.py   # Minimal demo input with three intentional bugs
-├── main.py              # CLI entry point
-├── visualize.py         # Telemetry charts (matplotlib)
+│   └── sample_buggy_file.py    # Minimal demo input with three intentional bugs
+├── tests/
+│   ├── conftest.py              # Shared pytest fixtures
+│   ├── test_state.py            # AgentState and sub-model tests
+│   ├── test_router.py           # guardrail_router branch coverage
+│   ├── test_helpers.py          # Deterministic helper unit tests
+│   └── test_graph_smoke.py     # Graph wiring + mocked LLM end-to-end tests
+├── main.py                      # CLI entry point
+├── visualize.py                 # Telemetry charts (matplotlib)
+├── pyproject.toml               # Project metadata, dependencies, ruff/pytest config
 ├── requirements.txt
 ├── .gitignore
 └── README.md
@@ -135,7 +148,11 @@ key via `getpass`, so no local configuration is needed.
 #### 1. Install dependencies
 
 ```bash
+# Standard install
 pip install -r requirements.txt
+
+# Or, with dev tools (pytest + ruff)
+pip install -e ".[dev]"
 ```
 
 #### 2. Set your Gemini API key
@@ -158,6 +175,12 @@ python main.py
 
 ```bash
 python main.py path/to/your_file.py
+```
+
+#### 5. Run the test suite (no API key required)
+
+```bash
+pytest
 ```
 
 The agent will print a structured log to stdout as it runs, then output a final
@@ -213,9 +236,8 @@ demonstrate concrete, recognisable failure modes:
 
 ## Limitations
 
-This is a **prototype built for demonstration purposes**.  Specific limitations:
+This is a **prototype built for research demonstration purposes**.  Specific limitations:
 
-- **No test suite.** The agent's outputs are not automatically validated against known-good fixes.
 - **Single-pass per region.** The executor proposes one fix; there is no retry or refinement loop within a region.
 - **No file patching.** Accepted fixes are printed to stdout; the original file is not modified.
 - **LLM dependence.** Fix quality depends entirely on the underlying model and prompt; no static analysis beyond AST is used.
@@ -225,10 +247,9 @@ This is a **prototype built for demonstration purposes**.  Specific limitations:
 
 ---
 
-## Optional improvements (not implemented)
+## Near-term research directions
 
-These are directions that would strengthen the prototype for research or
-production use, but are **outside the scope of this demo**:
+The following extensions are planned and would meaningfully strengthen the prototype:
 
 - [ ] **Retry loop in executor** — re-prompt if the critic rejects a fix (with a back-off counter to avoid infinite loops).
 - [ ] **In-place file patching** — apply accepted fixes and write the corrected file.
@@ -236,7 +257,25 @@ production use, but are **outside the scope of this demo**:
 - [ ] **Configurable LLM provider** — make `build_llm` accept a provider argument so the graph can run against any LangChain-compatible model.
 - [ ] **CLI budget flags** — expose `--max-loops` and `--max-tokens` as `argparse` arguments.
 - [ ] **Structured output parsing** — use LangChain's `with_structured_output` to enforce JSON schemas instead of manual parsing.
-- [ ] **Test suite** — property-based tests for helpers and golden-file integration tests for the full graph.
+- [ ] **Golden-file integration tests** — validate fix quality against known-correct outputs for the sample file.
+
+---
+
+## Research positioning
+
+This prototype addresses a concrete open challenge in agentic AI systems: how do you build
+a multi-step LLM workflow that **terminates reliably, stays within resource budgets, and
+remains fully auditable** — without sacrificing modularity?
+
+The Planner–Executor–Critic pattern with a centralised guardrail router is a deliberate
+design choice, not an implementation detail.  It separates the *proposal* of an action from
+its *approval*, which is a prerequisite for safe agentic loops.  The append-only
+`metrics_history` field provides a complete, inspectable audit trail without any external
+logging infrastructure.
+
+These properties — bounded execution, role separation, and structured observability — are
+relevant to ongoing research in dependable agentic systems, LLM-enabled program repair, and
+resource-constrained inference.
 
 ---
 
@@ -244,7 +283,7 @@ production use, but are **outside the scope of this demo**:
 
 Tested with:
 
-- Python 3.11
+- Python 3.11 / 3.12
 - `langgraph` 0.2.x
 - `langchain-google-genai` 2.x (Gemini 2.5 Flash)
 - `pydantic` 2.x
