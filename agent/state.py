@@ -15,7 +15,7 @@ each LLM invocation.  The ``guardrail_router`` checks both values against
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -43,6 +43,22 @@ class CritiqueResult(BaseModel):
     reason: str = ""
 
 
+class ValidationResult(BaseModel):
+    """Structured output from the SandboxExecutor for a candidate fix.
+
+    Fields mirror the ``SandboxResult`` TypedDict returned by
+    ``agent.tools.sandbox_executor.run_code`` but are stored as a Pydantic
+    model so they participate fully in LangGraph's state-merge mechanism.
+    """
+
+    success: bool = False
+    stdout: str = ""
+    stderr: str = ""
+    runtime_seconds: float = 0.0
+    timed_out: bool = False
+    error_category: str = "none"  # "none" | "timeout" | "syntax_error" | "memory_error" | "runtime_error"
+
+
 class AgentState(BaseModel):
     """Shared state that flows through every node in the LangGraph graph."""
 
@@ -61,13 +77,15 @@ class AgentState(BaseModel):
     # ---- latest node outputs -------------------------------------------------
     planner_output: AnalysisPlan = Field(default_factory=AnalysisPlan)
     executor_output: FixProposal = Field(default_factory=FixProposal)
+    validation_result: ValidationResult = Field(default_factory=ValidationResult)
     critic_output: CritiqueResult = Field(default_factory=CritiqueResult)
 
     # ---- telemetry -----------------------------------------------------------
     metrics_history: List[Dict[str, Any]] = Field(default_factory=list)
+    validation_failures: int = 0
 
     # ---- routing control -----------------------------------------------------
-    next_step: Literal["planner", "executor", "critic", "early_exit", "finish"] = "planner"
+    next_step: Literal["planner", "executor", "validation", "critic", "early_exit", "finish"] = "planner"
     final_message: str = ""
     last_node: str = ""
 

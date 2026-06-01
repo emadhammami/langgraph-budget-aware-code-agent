@@ -14,6 +14,10 @@ Graph topology
                                          ▲                                │
                                          │                (guardrail_router)
                                          │                                ▼
+                                         │                           validation
+                                         │                                │
+                                         │                (guardrail_router)
+                                         │                                ▼
                                          └────────────────────────── critic
                                                     (if regions remain)
 
@@ -35,6 +39,7 @@ from .nodes import (
     finish_node,
     load_file_node,
     planner_node,
+    validation_node,
 )
 from .router import guardrail_router
 from .state import AgentState
@@ -43,6 +48,7 @@ from .state import AgentState
 _ALL_TARGETS = {
     "planner": "planner",
     "executor": "executor",
+    "validation": "validation",
     "critic": "critic",
     "early_exit": "early_exit",
     "finish": "finish",
@@ -62,16 +68,18 @@ def build_graph():
     graph.add_node("load_file", load_file_node)
     graph.add_node("planner", planner_node)
     graph.add_node("executor", executor_node)
+    graph.add_node("validation", validation_node)
     graph.add_node("critic", critic_node)
     graph.add_node("early_exit", early_exit_node)
     graph.add_node("finish", finish_node)
 
     graph.add_edge(START, "load_file")
 
-    graph.add_conditional_edges("load_file", guardrail_router, _ALL_TARGETS)
-    graph.add_conditional_edges("planner",   guardrail_router, _ALL_TARGETS)
-    graph.add_conditional_edges("executor",  guardrail_router, _ALL_TARGETS)
-    graph.add_conditional_edges("critic",    guardrail_router, _ALL_TARGETS)
+    graph.add_conditional_edges("load_file",   guardrail_router, _ALL_TARGETS)
+    graph.add_conditional_edges("planner",     guardrail_router, _ALL_TARGETS)
+    graph.add_conditional_edges("executor",    guardrail_router, _ALL_TARGETS)
+    graph.add_conditional_edges("validation",  guardrail_router, _ALL_TARGETS)
+    graph.add_conditional_edges("critic",      guardrail_router, _ALL_TARGETS)
 
     graph.add_edge("early_exit", "finish")
     graph.add_edge("finish", END)

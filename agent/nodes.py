@@ -29,7 +29,8 @@ from .helpers import (
     safe_slice,
     try_ast_check,
 )
-from .state import AgentState, AnalysisPlan, CritiqueResult, FixProposal
+from .state import AgentState, AnalysisPlan, CritiqueResult, FixProposal, ValidationResult
+from .tools.sandbox_executor import run_code
 
 
 # ---------------------------------------------------------------------------
@@ -169,10 +170,53 @@ def executor_node(state: AgentState) -> Dict[str, Any]:
     update = {
         "executor_output": proposal,
         "total_tokens": state.total_tokens + used_tokens,
-        "next_step": "critic",
+        "next_step": "validation",
         "last_node": "executor",
     }
     return finalize_update(state, update, "executor")
+
+
+# ---------------------------------------------------------------------------
+# validation
+# ---------------------------------------------------------------------------
+
+def validation_node(state: AgentState) -> Dict[str, Any]:
+    """
+    Execute the Executor's proposed fix in a sandboxed subprocess and attach
+    objective execution evidence to the workflow state.
+
+    Responsibilities
+    ----------------
+    - Pass ``executor_output.fixed_snippet`` to :func:`run_code`.
+    - Capture stdout, stderr, return status, and wall-clock time.
+    - Wrap results in a :class:`~agent.state.ValidationResult` and store it
+      on state so the Critic can reason over concrete execution evidence.
+    - Increment ``validation_failures`` when execution is unsuccessful,
+      giving the telemetry subsystem a cumulative failure counter.
+
+    The node always routes to ``"critic"`` — a failed execution is *evidence*
+    for the Critic to act on, not a reason to skip it.
+    """
+    sandbox_result = run_code(state.executor_output.fixed_snippet)
+
+    validation = ValidationResult(
+        success=sandbox_result["success"],
+        stdout=sandbox_result["stdout"],
+        stderr=sandbox_result["stderr"],
+        runtime_seconds=sandbox_result["runtime_seconds"],
+        timed_out=sandbox_result["timed_out"],
+        error_category=sandbox_result["error_category"],
+    )
+
+    new_failures = state.validation_failures + (0 if sandbox_result["success"] else 1)
+
+    update = {
+        "validation_result": validation,
+        "validation_failures": new_failures,
+        "next_step": "critic",
+        "last_node": "validation",
+    }
+    return finalize_update(state, update, "validation")
 
 
 # ---------------------------------------------------------------------------
@@ -181,36 +225,64 @@ def executor_node(state: AgentState) -> Dict[str, Any]:
 
 def critic_node(state: AgentState) -> Dict[str, Any]:
     """
-    Validate the Executor's proposed fix using two complementary signals:
+    Validate the Executor's proposed fix using three complementary signals:
 
-    1. A local AST syntax check (deterministic, zero LLM cost) – gives the
-       Critic an objective ground-truth signal before the LLM call.
-    2. An LLM review that considers correctness and addresses the original
-       bug hypothesis.
+    1. **Execution evidence** (primary) – the ``ValidationResult`` produced by
+       :func:`validation_node` contains objective, deterministic facts:
+       whether the code ran successfully, any stderr output, and the
+       wall-clock runtime.  The Critic treats this as ground truth.
+    2. **Local AST syntax check** – a fast, zero-cost static check that
+       confirms basic syntactic correctness before the LLM call.
+    3. **LLM review** (secondary) – interprets the execution evidence and
+       the original bug hypothesis to make a final accept/reject decision.
 
-    Accepted fixes are appended to ``accepted_fixes`` and the analysed
-    region is added to ``analyzed_regions`` so the Planner skips it in the
-    next iteration.
+    By anchoring the LLM prompt in concrete execution results rather than
+    only code text, the Critic's judgement is grounded in observable facts.
     """
     model = build_llm()
     syntax_ok, syntax_msg = try_ast_check(state.executor_output.fixed_snippet)
+    vr = state.validation_result
+
+    # Format execution evidence for the prompt
+    exec_summary_lines = [
+        f"Executed successfully: {vr.success}",
+        f"Exit category:        {vr.error_category}",
+        f"Runtime (seconds):    {vr.runtime_seconds}",
+        f"Timed out:            {vr.timed_out}",
+    ]
+    if vr.stdout.strip():
+        exec_summary_lines.append(f"stdout:\n{vr.stdout.strip()}")
+    if vr.stderr.strip():
+        exec_summary_lines.append(f"stderr:\n{vr.stderr.strip()}")
+    exec_summary = "\n".join(exec_summary_lines)
 
     system_prompt = (
-        "You are the Critic.\n"
-        "Decide if the proposed fix is acceptable.\n\n"
+        "You are the Critic in an evidence-based code-review workflow.\n"
+        "Execution evidence is PRIMARY.  LLM reasoning is SECONDARY.\n\n"
+        "Decision rules:\n"
+        "  - If execution FAILED (success=false), reject unless the failure is\n"
+        "    clearly unrelated to the fix (e.g. missing test data).\n"
+        "  - If execution SUCCEEDED but there are semantic concerns, reason\n"
+        "    carefully before accepting.\n"
+        "  - Always justify your decision by referencing the execution evidence.\n\n"
         "Return JSON only:\n"
         '{\n  "valid": true,\n  "reason": "..."\n}'
     )
     user_prompt = (
         f"Region:\n{state.planner_output.target_region}\n\n"
+        f"Bug hypothesis:\n{state.planner_output.bug_hypothesis}\n\n"
         f"Proposed fix:\n{state.executor_output.fixed_snippet}\n\n"
-        f"Local syntax check:\n{syntax_msg}"
+        f"--- Execution evidence (primary) ---\n{exec_summary}\n\n"
+        f"--- Static syntax check ---\n{syntax_msg}"
     )
 
     data, used_tokens = llm_json_invoke(model, system_prompt, user_prompt)
 
+    # If execution succeeded and the LLM gives no opinion, default to accept.
+    # If execution failed, default to reject regardless of LLM silence.
+    default_valid = vr.success and syntax_ok
     critique = CritiqueResult(
-        valid=bool(data.get("valid", syntax_ok)),
+        valid=bool(data.get("valid", default_valid)),
         reason=str(data.get("reason", "Critic evaluation complete.")),
     )
 
