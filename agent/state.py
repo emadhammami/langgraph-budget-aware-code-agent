@@ -15,7 +15,7 @@ each LLM invocation.  The ``guardrail_router`` checks both values against
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, Field
 

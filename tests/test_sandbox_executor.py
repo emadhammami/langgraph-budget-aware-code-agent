@@ -15,8 +15,6 @@ snippets to verify:
 
 from __future__ import annotations
 
-import pytest
-
 from agent.tools.sandbox_executor import SandboxResult, run_code
 
 
