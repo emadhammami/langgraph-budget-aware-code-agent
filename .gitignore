@@ -44,4 +44,4 @@ htmlcov/
 Thumbs.db
 
 # Generated outputs (not part of the project source)
-sample_buggy_file.py
+/sample_buggy_file.py
