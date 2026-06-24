@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.state import AgentState, AnalysisPlan, CritiqueResult, FixProposal
+from agent.state import AgentState, AnalysisPlan, CritiqueResult, FixProposal, ValidationResult
 
 
 class TestAnalysisPlan:
@@ -54,6 +54,18 @@ class TestCritiqueResult:
         assert cr.reason == "looks correct"
 
 
+class TestValidationResult:
+    def test_defaults(self) -> None:
+        result = ValidationResult()
+        assert result.success is False
+        assert result.stdout == ""
+        assert result.stderr == ""
+        assert result.return_code == 0
+        assert result.runtime_seconds == 0.0
+        assert result.timed_out is False
+        assert result.error_category == "none"
+
+
 class TestAgentState:
     def test_requires_file_path(self) -> None:
         with pytest.raises(Exception):
@@ -72,6 +84,12 @@ class TestAgentState:
         assert state.metrics_history == []
         assert state.file_content == ""
         assert state.final_message == ""
+        assert state.validation_success is False
+        assert state.execution_stdout == ""
+        assert state.execution_stderr == ""
+        assert state.execution_return_code == 0
+        assert state.runtime_seconds == 0.0
+        assert state.validation_error_type == "none"
 
     def test_file_path_stored(self) -> None:
         state = AgentState(file_path="foo.py")
@@ -91,7 +109,7 @@ class TestAgentState:
 
     def test_next_step_literal_values(self) -> None:
         """next_step must only accept the documented literals."""
-        for valid in ("planner", "executor", "critic", "early_exit", "finish"):
+        for valid in ("planner", "executor", "validation", "critic", "early_exit", "finish"):
             s = AgentState(file_path="x.py", next_step=valid)  # type: ignore[arg-type]
             assert s.next_step == valid
 

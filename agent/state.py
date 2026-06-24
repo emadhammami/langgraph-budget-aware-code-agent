@@ -54,6 +54,7 @@ class ValidationResult(BaseModel):
     success: bool = False
     stdout: str = ""
     stderr: str = ""
+    return_code: int = 0
     runtime_seconds: float = 0.0
     timed_out: bool = False
     error_category: str = "none"  # "none" | "timeout" | "syntax_error" | "memory_error" | "runtime_error"
@@ -83,6 +84,12 @@ class AgentState(BaseModel):
     # ---- telemetry -----------------------------------------------------------
     metrics_history: List[Dict[str, Any]] = Field(default_factory=list)
     validation_failures: int = 0
+    validation_success: bool = False
+    execution_stdout: str = ""
+    execution_stderr: str = ""
+    execution_return_code: int = 0
+    runtime_seconds: float = 0.0
+    validation_error_type: str = "none"
 
     # ---- routing control -----------------------------------------------------
     next_step: Literal["planner", "executor", "validation", "critic", "early_exit", "finish"] = "planner"

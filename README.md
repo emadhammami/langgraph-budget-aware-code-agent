@@ -87,8 +87,8 @@ At any edge:  guardrail_router may redirect to → early_exit → finish → END
 | `load_file` | Reads the target Python file, splits it into lines, and uses the standard `ast` module to discover function boundaries as *candidate regions*. |
 | `planner` | Selects the single most suspicious unanalysed region and forms a bug hypothesis.  Increments `loop_count` each call. |
 | `executor` | Proposes a minimal, targeted fix for the selected region. |
-| `validation` | **NEW** — Executes the proposed fix in a sandboxed subprocess via `SandboxExecutor`.  Captures stdout, stderr, exit status, and runtime.  Attaches results to state as `ValidationResult`. |
-| `critic` | **Upgraded** — Validates the fix using three signals: (1) execution evidence from `validation_result` (primary), (2) a local AST syntax check, and (3) an LLM review (secondary).  Grounds its decision in observed execution facts. |
+| `validation` | Executes the proposed fix in a sandboxed subprocess via `SandboxExecutor`. Captures stdout, stderr, return code, exit status, and runtime. Attaches results to state as `ValidationResult`. |
+| `critic` | Validates the fix using three signals: (1) execution evidence from `validation_result` (primary), (2) a local AST syntax check, and (3) an LLM review (secondary). Grounds its decision in observed execution facts. |
 | `early_exit` | Records a budget-exceeded message when either hard limit is breached. |
 | `finish` | Terminal node; seals the final message for output. |
 
@@ -111,6 +111,7 @@ class ValidationResult(BaseModel):
     success: bool           # True iff exit code == 0
     stdout: str             # captured standard output
     stderr: str             # captured standard error
+    return_code: int        # subprocess return code
     runtime_seconds: float  # wall-clock execution time
     timed_out: bool         # True if process was killed by timeout
     error_category: str     # "none" | "timeout" | "syntax_error" | "memory_error" | "runtime_error"
@@ -133,6 +134,7 @@ happen between each pair of nodes — not only after the critic.
 `agent/tools/sandbox_executor.py` runs candidate code in a child process with:
 
 - **Hard timeout** — process is killed after `timeout` seconds (default 10 s).
+- **Return code capture** — the subprocess exit code is stored with stdout, stderr, and runtime.
 - **Soft memory limit** — applied via `RLIMIT_AS` on POSIX; silently skipped on Windows.
 - **No shell** — code is written to a temp file; `subprocess.run` is called with a list of
   args (no `shell=True`), eliminating shell-injection risk.
@@ -152,6 +154,7 @@ Each call to `finalize_update` appends a snapshot to `metrics_history`:
   "analyzed_regions": 2,
   "budget_used_ratio": 0.23,
   "validation_success": false,
+  "validation_return_code": 1,
   "validation_runtime_seconds": 0.08,
   "validation_error_category": "runtime_error",
   "validation_failures_total": 1
@@ -313,8 +316,9 @@ This is a **prototype built for research demonstration purposes**.  Specific lim
   region.
 - **No file patching.** Accepted fixes are printed to stdout; the original file is not
   modified.
-- **No test harness.** The sandbox executes the fixed snippet in isolation without a test
-  suite, so behavioural correctness depends on the snippet being self-contained.
+- **No benchmark harness yet.** The sandbox executes the fixed snippet in isolation without
+  the project test suite or golden cases, so behavioural correctness depends on the snippet
+  being self-contained.
 - **Token estimation fallback.** When usage metadata is unavailable, token counts are
   approximated with a 4-chars-per-token heuristic.
 - **Flat region granularity.** Regions are individual top-level functions; nested functions
@@ -328,8 +332,8 @@ This is a **prototype built for research demonstration purposes**.  Specific lim
 
 The following extensions are planned for later research phases:
 
-- [ ] **Test-harness integration** — run the project's own test suite after applying a fix
-  and use `pytest` exit codes as the validation signal (stronger than snippet execution).
+- [ ] **Benchmark harness** — run fixed candidates against known inputs, expected outputs,
+  and eventually the project test suite; use exit codes and assertions as validation signals.
 - [ ] **Retry loop in executor** — re-prompt if the critic rejects a fix, with a back-off
   counter to avoid infinite loops.
 - [ ] **In-place file patching** — apply accepted fixes and write the corrected file.
@@ -340,7 +344,6 @@ The following extensions are planned for later research phases:
 - [ ] **Configurable LLM provider** — make `build_llm` accept a provider argument.
 - [ ] **CLI budget flags** — expose `--max-loops` and `--max-tokens` as `argparse` arguments.
 - [ ] **Golden-file benchmarks** — validate fix quality against known-correct outputs.
-- [ ] **SWE-bench integration** — evaluate at scale on a standard benchmark (later phase).
 
 ---
 

@@ -43,6 +43,7 @@ def _mock_success() -> Dict[str, Any]:
         "success": True,
         "stdout": "All tests passed\n",
         "stderr": "",
+        "return_code": 0,
         "runtime_seconds": 0.12,
         "timed_out": False,
         "error_category": "none",
@@ -54,6 +55,7 @@ def _mock_failure(error_category: str = "runtime_error") -> Dict[str, Any]:
         "success": False,
         "stdout": "",
         "stderr": "ZeroDivisionError: division by zero\n",
+        "return_code": 1,
         "runtime_seconds": 0.08,
         "timed_out": False,
         "error_category": error_category,
@@ -65,6 +67,7 @@ def _mock_timeout() -> Dict[str, Any]:
         "success": False,
         "stdout": "",
         "stderr": "",
+        "return_code": -1,
         "runtime_seconds": 1.01,
         "timed_out": True,
         "error_category": "timeout",
@@ -120,12 +123,24 @@ class TestValidationNodeSuccess:
             result = validation_node(state)
         assert result["validation_result"].runtime_seconds == pytest.approx(0.12)
 
+    def test_flat_state_fields_are_stored(self) -> None:
+        state = _make_state()
+        with patch("agent.nodes.run_code", return_value=_mock_success()):
+            result = validation_node(state)
+        assert result["validation_success"] is True
+        assert "All tests passed" in result["execution_stdout"]
+        assert result["execution_stderr"] == ""
+        assert result["execution_return_code"] == 0
+        assert result["runtime_seconds"] == pytest.approx(0.12)
+        assert result["validation_error_type"] == "none"
+
     def test_metrics_history_appended(self) -> None:
         state = _make_state()
         with patch("agent.nodes.run_code", return_value=_mock_success()):
             result = validation_node(state)
         assert len(result["metrics_history"]) == 1
         assert result["metrics_history"][0]["node"] == "validation"
+        assert result["metrics_history"][0]["validation_return_code"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +160,7 @@ class TestValidationNodeFailure:
         with patch("agent.nodes.run_code", return_value=_mock_failure()):
             result = validation_node(state)
         assert "ZeroDivisionError" in result["validation_result"].stderr
+        assert "ZeroDivisionError" in result["execution_stderr"]
 
     def test_validation_failures_incremented(self) -> None:
         state = _make_state(validation_failures=0)

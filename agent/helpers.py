@@ -47,7 +47,6 @@ def estimate_tokens(*texts: str) -> int:
 
 def record_metrics(state: AgentState, node_name: str) -> List[Dict[str, Any]]:
     """Append a telemetry snapshot for the current step and return the full history."""
-    vr = state.validation_result
     return state.metrics_history + [
         {
             "step": len(state.metrics_history) + 1,
@@ -58,9 +57,10 @@ def record_metrics(state: AgentState, node_name: str) -> List[Dict[str, Any]]:
             "analyzed_regions": len(state.analyzed_regions),
             "budget_used_ratio": state.total_tokens / max(1, state.max_tokens_budget),
             # --- validation telemetry ---
-            "validation_success": vr.success,
-            "validation_runtime_seconds": vr.runtime_seconds,
-            "validation_error_category": vr.error_category,
+            "validation_success": state.validation_success,
+            "validation_return_code": state.execution_return_code,
+            "validation_runtime_seconds": state.runtime_seconds,
+            "validation_error_category": state.validation_error_type,
             "validation_failures_total": state.validation_failures,
         }
     ]
@@ -84,8 +84,9 @@ def finalize_update(
         "accepted_fixes": len(temp_state.accepted_fixes),
         "analyzed_regions": temp_state.analyzed_regions,
         "next_step": temp_state.next_step,
-        "validation_success": temp_state.validation_result.success,
-        "validation_error_category": temp_state.validation_result.error_category,
+        "validation_success": temp_state.validation_success,
+        "validation_return_code": temp_state.execution_return_code,
+        "validation_error_category": temp_state.validation_error_type,
         "validation_failures_total": temp_state.validation_failures,
     }
     logger.info(json.dumps(snapshot, indent=2))

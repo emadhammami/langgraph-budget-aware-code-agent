@@ -28,6 +28,7 @@ def assert_result_shape(result: SandboxResult) -> None:
     assert isinstance(result["success"], bool)
     assert isinstance(result["stdout"], str)
     assert isinstance(result["stderr"], str)
+    assert isinstance(result["return_code"], int)
     assert isinstance(result["runtime_seconds"], float)
     assert isinstance(result["timed_out"], bool)
     assert result["error_category"] in {
@@ -50,6 +51,7 @@ class TestSuccessCase:
     def test_simple_print_succeeds(self) -> None:
         result = run_code('print("hello sandbox")')
         assert result["success"] is True
+        assert result["return_code"] == 0
         assert "hello sandbox" in result["stdout"]
         assert result["error_category"] == "none"
 
@@ -80,6 +82,7 @@ class TestFailureCase:
     def test_runtime_error_returns_failure(self) -> None:
         result = run_code("raise ValueError('deliberate')")
         assert result["success"] is False
+        assert result["return_code"] != 0
         assert result["timed_out"] is False
 
     def test_runtime_error_category(self) -> None:
@@ -98,6 +101,7 @@ class TestFailureCase:
     def test_system_exit_nonzero_is_failure(self) -> None:
         result = run_code("import sys; sys.exit(1)")
         assert result["success"] is False
+        assert result["return_code"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +137,7 @@ class TestTimeoutCase:
     def test_timeout_returns_failure(self) -> None:
         result = run_code("import time; time.sleep(5)", timeout=1.0)
         assert result["success"] is False
+        assert result["return_code"] == -1
 
     def test_timeout_error_category(self) -> None:
         result = run_code("import time; time.sleep(5)", timeout=1.0)

@@ -203,6 +203,7 @@ def validation_node(state: AgentState) -> Dict[str, Any]:
         success=sandbox_result["success"],
         stdout=sandbox_result["stdout"],
         stderr=sandbox_result["stderr"],
+        return_code=sandbox_result["return_code"],
         runtime_seconds=sandbox_result["runtime_seconds"],
         timed_out=sandbox_result["timed_out"],
         error_category=sandbox_result["error_category"],
@@ -213,6 +214,12 @@ def validation_node(state: AgentState) -> Dict[str, Any]:
     update = {
         "validation_result": validation,
         "validation_failures": new_failures,
+        "validation_success": validation.success,
+        "execution_stdout": validation.stdout,
+        "execution_stderr": validation.stderr,
+        "execution_return_code": validation.return_code,
+        "runtime_seconds": validation.runtime_seconds,
+        "validation_error_type": validation.error_category,
         "next_step": "critic",
         "last_node": "validation",
     }
@@ -246,6 +253,7 @@ def critic_node(state: AgentState) -> Dict[str, Any]:
     # Format execution evidence for the prompt
     exec_summary_lines = [
         f"Executed successfully: {vr.success}",
+        f"Return code:           {vr.return_code}",
         f"Exit category:        {vr.error_category}",
         f"Runtime (seconds):    {vr.runtime_seconds}",
         f"Timed out:            {vr.timed_out}",

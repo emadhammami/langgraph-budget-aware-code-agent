@@ -17,6 +17,7 @@ Output format
         "success": false,
         "stdout": "...",
         "stderr": "SyntaxError: invalid syntax ...",
+        "return_code": 1,
         "runtime_seconds": 0.34,
         "timed_out": false,
         "error_category": "runtime_error"
@@ -51,6 +52,7 @@ class SandboxResult(TypedDict):
     success: bool
     stdout: str
     stderr: str
+    return_code: int
     runtime_seconds: float
     timed_out: bool
     error_category: str
@@ -125,7 +127,8 @@ def run_code(
     -------
     SandboxResult
         A typed dict with keys ``success``, ``stdout``, ``stderr``,
-        ``runtime_seconds``, ``timed_out``, and ``error_category``.
+        ``return_code``, ``runtime_seconds``, ``timed_out``, and
+        ``error_category``.
     """
     timed_out = False
     returncode = -1
@@ -175,6 +178,7 @@ def run_code(
         success=(returncode == 0),
         stdout=stdout,
         stderr=stderr,
+        return_code=returncode,
         runtime_seconds=round(runtime, 4),
         timed_out=timed_out,
         error_category=error_category,
